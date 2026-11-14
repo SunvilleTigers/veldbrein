@@ -353,8 +353,21 @@ body {
   line-height: 1.45; text-align: left; }
 .board-notice b { color: var(--orange); }
 .board-list { list-style: none; margin: 12px auto 0; padding: 0 12px; max-width: 460px; }
-.board-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 7px;
+.board-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin-bottom: 7px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+/* Op gsm-breedte: niets mag breder worden dan het scherm (een lange bijnaam krijgt "…"). */
+#screen-board > * { min-width: 0; box-sizing: border-box; width: 100%; }
+.board-row > * { flex-shrink: 0; }
+.board-row > .br-name { flex-shrink: 1; min-width: 0; }
+/* Mini-avatar op het scorebord (zelfde opbouw als de grote avatar: look-ring + personage + gear) */
+.br-ava { position: relative; flex: 0 0 auto; width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--orange);
+  box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
+.br-ava .ava-face { font-size: 20px; line-height: 1; }
+.br-ava .ava-gear { position: absolute; right: -6px; bottom: -5px; font-size: 13px; line-height: 1;
+  background: #0d0d0d; border-radius: 50%; padding: 1px; }
+.bm-card .br-ava { width: 56px; height: 56px; border-width: 3px; }
+.bm-card .br-ava .ava-face { font-size: 31px; }
+.bm-card .br-ava .ava-gear { font-size: 17px; right: -5px; bottom: -4px; }
 .board-row.top3 { border-color: rgba(244,122,31,.4); }
 .board-row.me { border-color: var(--orange); box-shadow: 0 0 0 2px rgba(244,122,31,.25); }
 .br-rank { width: 30px; text-align: center; font-weight: 800; font-size: 16px; }
@@ -2775,6 +2788,14 @@ body {
     return 'Er ging iets mis (' + err + ').';
   }
 
+  // De avatar als korte id's uit de catalogus (personage, look, gear) — zo tekent elke
+  // app-versie hem zelf en reist er geen vrije tekst mee naar de server.
+  function avatarOf(profile) {
+    function id(v, d) { v = String(v || d); return /^[a-z0-9_-]{1,24}$/.test(v) ? v : d; }
+    return { c: id(profile.equippedAvatar, 'tijger'), l: id(profile.equippedLook, 'klassiek'),
+             g: id(profile.equippedGear, 'none') };
+  }
+
   /* --- Insturen ----------------------------------------------------------- */
   // Stuurt bijnaam + rugnummer + punten + level in, enkel als er iets veranderde
   // (of force). cb(err, {rang, totaal, score, vorigeRang}).
@@ -2784,12 +2805,14 @@ body {
     if (!validName(naam)) { cb('geen-naam', null); return; }
     var nr = cleanNumber(profile.rugnummer);
     var id = identity();
-    var sig = [id.id, naam, nr, profile.xp | 0, profile.level | 0].join('|');
+    var ava = avatarOf(profile);
+    var sig = [id.id, naam, nr, profile.xp | 0, profile.level | 0, ava.c, ava.l, ava.g].join('|');
     if (!force && lsGet(LASTKEY) === sig) { cb('ongewijzigd', lastRank()); return; }
     var vorige = lastRank();
     rpc('veldbrein_bewaar', {
       p_id: id.id, p_geheim: id.geheim, p_bijnaam: naam, p_rugnummer: nr,
-      p_score: Math.max(0, Math.round(profile.xp || 0)), p_level: profile.level | 0
+      p_score: Math.max(0, Math.round(profile.xp || 0)), p_level: profile.level | 0,
+      p_avatar: ava
     }, function (err, res) {
       if (err) { cb(err, null); return; }
       lsSet(LASTKEY, sig);
@@ -2800,7 +2823,7 @@ body {
     });
   }
 
-  // Ranglijst: { totaal, top:[{rang,bijnaam,rugnummer,score,level,ik}], ik:{...}|null }
+  // Ranglijst: { totaal, top:[{rang,bijnaam,rugnummer,score,level,avatar:{c,l,g},ik}], ik:{...}|null }
   function ranking(limit, cb) {
     rpc('veldbrein_ranglijst', { p_id: identity().id, p_limiet: limit || 25 }, function (err, res) {
       if (!err && res) {
@@ -2836,7 +2859,7 @@ body {
     cfg: cfg, setCfg: setCfg, clearCfg: clearCfg, isReady: isReady, rpc: rpc,
     identity: identity, setIdentity: setIdentity, removeIdentity: removeIdentity, forgetIdentity: forgetIdentity,
     cleanName: cleanName, validName: validName, cleanNumber: cleanNumber, errorText: errorText,
-    submit: submit, ranking: ranking, lastRank: lastRank, remove: remove
+    submit: submit, ranking: ranking, lastRank: lastRank, remove: remove, avatarOf: avatarOf
   };
 })(window);
 
@@ -4037,16 +4060,30 @@ body {
     }
     var rang = ik ? ik.rang : (r && r.rang), totaal = (r && r.totaal) || 0;
     el.innerHTML = '<div class="bm-card"><div class="bm-rank">' + (rang ? '#' + rang : '–') + '</div>' +
+      miniAvatar(Leaderboard.avatarOf(p)) +
       '<div class="bm-info"><div class="bm-name">' + nrChip(p.rugnummer) + esc(Leaderboard.cleanName(p.playerName)) + '</div>' +
       '<div class="bm-sub">' + (rang ? 'van ' + totaal + ' speler' + (totaal === 1 ? '' : 's') : 'Speel een ronde om op het scorebord te komen') +
       ' · ' + (p.xp | 0) + ' punten</div></div></div>';
+  }
+
+  // Kleine avatar voor het scorebord, getekend uit de catalogus-id's {c, l, g}.
+  // Onbekende of ontbrekende id's (bv. een oudere app-versie) = de standaard-avatar.
+  // Kleuren en emoji komen uit onze eigen catalogus, nooit rechtstreeks van de server.
+  function miniAvatar(av) {
+    av = av || {};
+    var ch = Shop.avatarById(av.c || 'tijger'), lk = Shop.lookById(av.l || 'klassiek'), gr = Shop.gearById(av.g || 'none');
+    return '<span class="br-ava" style="background:radial-gradient(circle at 50% 36%, ' + lk.bg + ', #0a0a0a);' +
+      'border-color:' + lk.ring + '"><span class="ava-face">' + ch.emoji + '</span>' +
+      (gr.emoji ? '<span class="ava-gear">' + gr.emoji + '</span>' : '') + '</span>';
   }
 
   function boardRow(row) {
     var li = document.createElement('li');
     li.className = 'board-row' + (row.ik ? ' me' : '') + (row.rang <= 3 ? ' top3' : '');
     var medal = ['🥇', '🥈', '🥉'][row.rang - 1] || row.rang + '.';
-    li.innerHTML = '<span class="br-rank">' + medal + '</span>' + nrChip(row.rugnummer) +
+    // Je eigen rij toont meteen je huidige avatar (ook als de server nog de vorige heeft).
+    var av = row.ik ? Leaderboard.avatarOf(game.profile) : row.avatar;
+    li.innerHTML = '<span class="br-rank">' + medal + '</span>' + miniAvatar(av) + nrChip(row.rugnummer) +
       '<span class="br-name">' + esc(row.bijnaam) + '</span>' +
       '<span class="br-lvl">Lv ' + (row.level | 0) + '</span>' +
       '<span class="br-score">' + (row.score | 0) + '</span>';
@@ -4314,6 +4351,8 @@ body {
     }
     p[ax.owned][id] = true; p[ax.eq] = id;
     Storage.save(p); renderAvatar(); renderProfile();
+    submitScore();          // nieuwe avatar meteen op het scorebord
+    syncPushNow(false);     // en in je spelerscode
   }
 
   function buyField(id) {

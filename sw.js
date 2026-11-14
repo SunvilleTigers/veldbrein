@@ -1,7 +1,7 @@
 /* Veldbrein service worker — offline app-shell cache. */
 // index.html is volledig zelfstandig (css + js inline); de veld-achtergronden
 // horen in de precache zodat skins ook offline (op het veld) werken.
-var CACHE = 'veldbrein-v25';
+var CACHE = 'veldbrein-v26';
 var ASSETS = [
   './',
   'index.html',
