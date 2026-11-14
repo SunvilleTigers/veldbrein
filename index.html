@@ -562,7 +562,8 @@ body {
         <button id="btn-sound" class="btn btn-ghost">🔊 Geluid</button>
         <button id="btn-reset" class="btn btn-ghost btn-danger">Voortgang wissen</button>
       </div>
-      <p class="reglement-note">Regels volgens KNBSB Reglement van Wedstrijden 2026, Hfdst. 8 (Honkbal Jeugd).</p>
+      <p class="reglement-note">Regels volgens KNBSB Reglement van Wedstrijden 2026, Hfdst. 8 (Honkbal Jeugd).
+        · versie v27</p>
     </div>
   </section>
 
@@ -4031,6 +4032,8 @@ body {
     $('screen-board').classList.toggle('is-active', name === 'board');
     $('screen-avatar').classList.toggle('is-active', name === 'avatar');
     if (name === 'game') requestAnimationFrame(function () { field.resize(); });
+    // Nieuwe versie binnengekomen tijdens een play? Nu, terug buiten het spel, laden.
+    if (name !== 'game' && _swReload) location.reload();
   }
 
   /* --- Scorebord (rangschikking, gedeeld online in de clubdatabank) -------- */
@@ -5096,8 +5099,24 @@ why_runners('tussen ' + (LABEL[s.between[0]] || s.between[0]) + ' en ' + (LABEL[
   function renderSound() { var b = $('btn-sound'); if (b) b.textContent = Sfx.on() ? '🔊 Geluid' : '🔇 Geluid uit'; }
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
+  // Service worker + updates. Een geïnstalleerde gsm-app wordt zelden echt afgesloten:
+  // daarom kijken we bij elke terugkeer naar de app of er een nieuwe versie is, en laden
+  // we die meteen (nooit midden in een play: dan pas bij het volgende scherm).
+  var _swReload = false;
   function registerSW() {
-    if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) navigator.serviceWorker.register('sw.js').catch(function () {});
+    if (!('serviceWorker' in navigator) || location.protocol.indexOf('http') !== 0) return;
+    var hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js').then(function (reg) {
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') reg.update().catch(function () {});
+      });
+    }).catch(function () {});
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadController || _swReload) return;   // eerste installatie: niets herladen
+      _swReload = true;
+      if ($('screen-game').classList.contains('is-active')) return;   // na de play (zie showScreen)
+      location.reload();
+    });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
